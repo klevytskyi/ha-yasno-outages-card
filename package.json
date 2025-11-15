@@ -1,0 +1,29 @@
+{
+  "name": "ha-yasno-outages-card",
+  "version": "1.0.0",
+  "description": "Home Assistant custom card for Yasno power outages visualization",
+  "main": "dist/yasno-outages-card.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/klevytskyi/ha-yasno-outages-card"
+  },
+  "author": "Kostiantyn Levytskyi",
+  "license": "MIT",
+  "dependencies": {
+    "custom-card-helpers": "^1.9.0",
+    "lit": "^3.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.0",
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.3.3"
+  },
+  "scripts": {
+    "build": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --minify --format=esm --sourcemap",
+    "dev": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --watch --format=esm",
+    "format": "biome format --write src/",
+    "lint": "biome lint src/",
+    "check": "biome check --apply src/"
+  }
+}

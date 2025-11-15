@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "lovelace",
+  "data": {
+    "config": {
+      "title": "Home",
+      "views": [
+        {
+          "title": "Example",
+          "cards": [
+            {
+              "type": "custom:yasno-outages-card",
+              "entity": "sensor.yasno_outages",
+              "title": "Power Outages Schedule"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

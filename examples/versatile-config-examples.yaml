@@ -1,0 +1,187 @@
+# Example Configurations for Versatile Title/Subtitle
+
+## Example 1: Simple Text
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title: "Power Schedule"
+subtitle: "Today's outages"
+```
+
+## Example 2: Default Behavior
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+# Title will show calendar entity's friendly_name
+# Subtitle will show current date
+```
+
+## Example 3: Templates
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title: "{{ state_attr('calendar.yasno_power_outages', 'friendly_name') }}"
+subtitle: "{{ now().strftime('%A, %d %B %Y') }}"
+```
+
+## Example 4: Entity Name and Device
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title:
+  - type: entity
+  - type: text
+    text: "—"
+  - type: device
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  type: state
+```
+
+## Example 5: Area-based Title
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title:
+  - type: area
+  - type: text
+    text: "Outages"
+subtitle: "Check schedule below"
+```
+
+## Example 6: Full Context Display
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title:
+  - type: area
+  - type: text
+    text: "›"
+  - type: device
+  - type: text
+    text: "›"
+  - type: entity
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  - type: text
+    text: "Updated"
+  - type: state
+```
+*Output: "Living Room › Smart Meter › Yasno Power Outages" / "Updated 20 годин тому"*
+
+## Example 7: Custom Attribute Display
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title: "Power Schedule"
+subtitle_entity: sensor.yasno_queue
+subtitle:
+  - type: text
+    text: "Queue:"
+  - type: attribute
+    attribute: queue_number
+```
+
+## Example 8: Mixed Template and Items
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title: "{{ state_attr('calendar.yasno_power_outages', 'friendly_name') }}"
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  - type: area
+  - type: text
+    text: "•"
+  - type: state
+```
+
+## Example 9: Device Location Context
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title:
+  type: entity
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  - type: device
+  - type: text
+    text: "in"
+  - type: area
+```
+*Output: "Yasno Power Outages" / "Smart Meter in Living Room"*
+
+## Example 10: Timestamp Sensor Auto-Update
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title: "Power Outages"
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  type: state
+# Will show relative time like "20 годин тому" and auto-update
+```
+
+## Example 11: Minimal Config with Subtitle Entity
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  type: state
+```
+
+## Example 12: Location-aware Schedule
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title:
+  - type: text
+    text: "⚡"
+  - type: area
+  - type: text
+    text: "Schedule"
+subtitle_entity: sensor.yasno_last_updated
+subtitle:
+  - type: text
+    text: "📅"
+  - type: state
+```
+
+## Testing Different Scenarios
+
+### No Device/Area Assigned
+If entity doesn't have device or area:
+```yaml
+title:
+  - type: entity  # Falls back to entity name
+  - type: device  # Empty (removed from output)
+  - type: area    # Empty (removed from output)
+# Result: Just entity name
+```
+
+### Multiple Entities
+Show info from different entities:
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title:
+  type: entity
+subtitle_entity: sensor.yasno_queue
+subtitle:
+  - type: text
+    text: "Queue"
+  - type: attribute
+    attribute: queue_number
+  - type: text
+    text: "•"
+  - type: state
+```
+
+### Backward Compatible
+Old configs still work:
+```yaml
+type: custom:yasno-outages-card
+entity: calendar.yasno_power_outages
+title: "Power Outages"
+subtitle_entity: sensor.yasno_last_updated
+```

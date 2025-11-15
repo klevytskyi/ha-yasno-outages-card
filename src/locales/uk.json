@@ -1,0 +1,7 @@
+{
+  "legend_current": "Поточний час",
+  "legend_powered": "Є світло",
+  "legend_certain_outage": "Немає світла",
+  "legend_possible_outage": "Можливе відключення",
+  "default_title": "Графік відключень"
+}

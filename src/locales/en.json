@@ -1,0 +1,7 @@
+{
+  "legend_current": "Current",
+  "legend_powered": "Powered",
+  "legend_certain_outage": "Certain Outage",
+  "legend_possible_outage": "Possible Outage",
+  "default_title": "Power Outages Schedule"
+}
