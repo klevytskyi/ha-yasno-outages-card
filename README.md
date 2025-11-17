@@ -120,11 +120,10 @@ See the examples directory for more configuration samples.
 
 ## Screenshots
 
-### Light Theme
-<img src="images/ha-yasno-outages-card-light.png" alt="Light Theme Screenshot" width="400">
+### Light/Dark Theme
 
-### Dark Theme
-<img src="images/ha-yasno-outages-card-dark.png" alt="Dark Theme Screenshot" width="400">
+<img src="images/ha-yasno-outages-card-light.png" alt="Light Theme Screenshot" height="500">
+<img src="images/ha-yasno-outages-card-dark.png" alt="Dark Theme Screenshot" height="500">
 
 ## Compatibility
 

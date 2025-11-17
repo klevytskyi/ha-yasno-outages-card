@@ -88,7 +88,7 @@ npm run lint     # Biome linter
 - **Decorators**: `@customElement`, `@property`, `@state` from Lit
 - **Config**: `tsconfig.json` has `experimentalDecorators: true` and `useDefineForClassFields: false` (required for Lit)
 - **JSON imports**: Enabled via `resolveJsonModule: true` for locales
-- **Avoid `any`**: Known linter warnings exist but build works - prefer fixing with proper types
+<!-- - **Avoid `any`**: Known linter warnings exist but build works - prefer fixing with proper types -->
 
 ## Integration Points
 

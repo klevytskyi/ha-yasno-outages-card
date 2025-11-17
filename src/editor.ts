@@ -1,6 +1,6 @@
-import { LitElement, html, css } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
 import type { LovelaceCardEditor } from "custom-card-helpers";
+import { LitElement, css, html } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, YasnoOutageConfig } from "./types";
 import { isTemplate, normalizeEntityNameValue } from "./utils";
 
@@ -19,11 +19,11 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
     if (!this._config || !this.hass) {
       return;
     }
+    // biome-ignore lint/suspicious/noExplicitAny: I have no idea what type this is and it just works :D
     const target = ev.target as any;
     const value = ev.detail.value;
 
     if (target.configValue) {
-      // Check if value is empty, null, undefined, or an empty array
       const isEmpty =
         value === "" ||
         value === undefined ||
@@ -31,12 +31,10 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
         (Array.isArray(value) && value.length === 0);
 
       if (isEmpty) {
-        // Delete the field from config
         const newConfig = { ...this._config };
         delete newConfig[target.configValue as keyof YasnoOutageConfig];
         this._config = newConfig;
       } else {
-        // For title/subtitle in content mode, always ensure it's an array
         const isContentField = target.configValue === "title" || target.configValue === "subtitle";
         const isContentMode =
           (target.configValue === "title" && this._titleMode === "content") ||
@@ -44,12 +42,10 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
 
         let finalValue = value;
         if (isContentField && isContentMode) {
-          // Ensure value is an array
           if (!Array.isArray(finalValue)) {
             finalValue = [finalValue];
           }
 
-          // Normalize plain strings to {type: "text", text: "..."} format
           if (target.configValue === "title") {
             finalValue = normalizeEntityNameValue(finalValue);
           }
@@ -212,6 +208,21 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
               this._config = {
                 ...this._config,
                 show_legend: target.checked,
+              };
+              this._fireConfigChanged();
+            }}
+          ></ha-switch>
+        </div>
+
+        <div class="switch-container">
+          <label>Show today/tomorrow tabs</label>
+          <ha-switch
+            .checked=${this._config.show_weekly === true}
+            @change=${(ev: Event) => {
+              const target = ev.target as HTMLInputElement;
+              this._config = {
+                ...this._config,
+                show_weekly: target.checked,
               };
               this._fireConfigChanged();
             }}

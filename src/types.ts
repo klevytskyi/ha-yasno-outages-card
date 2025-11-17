@@ -1,15 +1,22 @@
-import type { HomeAssistant as HomeAssistantBase, LovelaceCardConfig } from "custom-card-helpers";
+import type {
+  HomeAssistant as HomeAssistantBase,
+  LovelaceCardConfig,
+  Theme,
+} from "custom-card-helpers";
+
+export type HaEntity = {
+  entity_id: string;
+  device_id?: string;
+  area_id?: string;
+  attributes: Record<string, string>;
+  state: string;
+  last_changed: string;
+  last_updated: string;
+};
 
 // Extend HomeAssistant type with additional properties used in HA frontend
 export interface HomeAssistant extends HomeAssistantBase {
-  entities?: Record<
-    string,
-    {
-      entity_id: string;
-      device_id?: string;
-      area_id?: string;
-    }
-  >;
+  entities?: Record<string, HaEntity>;
   devices?: Record<
     string,
     {
@@ -29,11 +36,11 @@ export interface HomeAssistant extends HomeAssistantBase {
   themes: {
     darkMode: boolean;
     default_theme: string;
-    themes: Record<string, any>;
+    themes: Record<string, Theme>;
   };
+  formatEntityState(entity: HaEntity): string;
 }
 
-// Content item types based on HA frontend patterns (tile card, entity badge)
 export type EntityNameItem =
   | { type: "entity" }
   | { type: "name" }
@@ -52,19 +59,42 @@ export type SubtitleItem =
 
 export interface YasnoOutageConfig extends LovelaceCardConfig {
   entity: string;
-  title?: string | EntityNameItem | EntityNameItem[]; // String (template), item, or array of items
-  subtitle?: string | SubtitleItem | SubtitleItem[] | string[] | (SubtitleItem | string)[]; // Supports both object and string format from ui_state_content
-  subtitle_entity?: string; // Entity to use for subtitle content items (if not specified, uses main entity)
-  show_legend?: boolean; // Whether to show the legend (default: true)
+  title?: string | EntityNameItem | EntityNameItem[];
+  subtitle?: string | SubtitleItem | SubtitleItem[] | string[] | (SubtitleItem | string)[];
+  subtitle_entity?: string;
+  show_legend?: boolean;
+  show_weekly?: boolean;
 }
 
 export interface OutageData {
   hours: HourData[];
+  date?: Date;
+}
+
+export interface OutageDataCache {
+  today: OutageData;
+  tomorrow: OutageData;
+}
+
+export interface WeekDay {
+  date: Date;
+  label: string;
+  isToday: boolean;
 }
 
 export interface HourData {
   state: "powered" | "certain_outage" | "possible_outage";
-  partPercentage?: number; // 0-100: percentage of hour in current state (for partial hours)
-  isCurrent?: boolean; // Indicates if this hour is the current hour
-  partType?: "start" | "end"; // Type of partial: start (left-to-right) or end (right-to-left)
+  partPercentage?: number;
+  isCurrent?: boolean;
+  partType?: "start" | "end";
+}
+
+export interface HaCalendarServiceResponse {
+  response?: { [key: string]: { events: CalendarEvent[] } };
+}
+export interface CalendarEvent {
+  start: string;
+  end: string;
+  summary: string;
+  description?: string;
 }

@@ -1,21 +1,21 @@
-import { LitElement, html, css } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
 import type { LovelaceCardEditor } from "custom-card-helpers";
+import { LitElement, css, html } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
 import type {
-  HomeAssistant,
-  YasnoOutageConfig,
-  OutageData,
-  HourData,
+  CalendarEvent,
   EntityNameItem,
+  HaCalendarServiceResponse,
+  HaEntity,
+  HomeAssistant,
+  HourData,
+  OutageData,
+  OutageDataCache,
   SubtitleItem,
+  YasnoOutageConfig,
 } from "./types";
-import {
-  isTemplate,
-  findEntity,
-  renderContentItem,
-  renderContentArray,
-} from "./utils";
+
 import { localize } from "./localize";
+import { findEntity, isTemplate } from "./utils";
 import "./editor";
 
 declare global {
@@ -28,11 +28,16 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "yasno-outages-card",
   name: "Yasno Outages Card",
-  description:
-    "Display 24-hour power outage schedule from Yasno calendar integration",
+  description: "Display 24-hour power outage schedule from Yasno calendar integration",
   preview: true,
 });
 
+console.info(
+  // @ts-ignore - __VERSION__ is injected by esbuild
+  `%c YASNO-CARD %c ${__VERSION__} `,
+  "color: white; background: #ffc107; font-weight: 700;",
+  "color: #ffc107; background: white; font-weight: 700;",
+);
 @customElement("yasno-outages-card")
 export class YasnoOutagesCard extends LitElement {
   @property({ attribute: false })
@@ -41,15 +46,6 @@ export class YasnoOutagesCard extends LitElement {
   @property({ attribute: false })
   config!: YasnoOutageConfig;
 
-  /**
-   * Template Subscription System
-   *
-   * Tracks active subscriptions to Home Assistant templates.
-   * Templates can contain dynamic variables that change over time (e.g., states, now(), etc.)
-   * Instead of polling, we subscribe to template updates and get notified of changes.
-   *
-   * Usage: this._subscribeTemplate("key", "{{ template }}", (result) => { ... })
-   */
   private _templateUnsubscribes: Map<string, () => void> = new Map();
 
   public setConfig(config: YasnoOutageConfig): void {
@@ -71,71 +67,20 @@ export class YasnoOutagesCard extends LitElement {
   }
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
-    return document.createElement(
-      "yasno-outages-card-editor"
-    ) as LovelaceCardEditor;
+    return document.createElement("yasno-outages-card-editor") as LovelaceCardEditor;
   }
 
   public static getStubConfig(
     hass: HomeAssistant,
     entities: string[],
-    entitiesFallback: string[]
+    entitiesFallback: string[],
   ): YasnoOutageConfig {
     const includeDomains = ["calendar"];
     const maxEntities = 1;
 
-    // Helper to find entities matching domain
-    const findEntity = (
-      entityList: string[],
-      maxCount: number,
-      preferredKeyword?: string
-    ): string[] => {
-      const conditions: ((eid: string) => boolean)[] = [];
-
-      if (includeDomains.length) {
-        conditions.push((eid) => {
-          const domain = eid.split(".")[0];
-          return includeDomains.includes(domain);
-        });
-      }
-
-      // First, try to find entities with the preferred keyword
-      if (preferredKeyword) {
-        const preferredFiltered: string[] = [];
-        for (
-          let i = 0;
-          i < entityList.length && preferredFiltered.length < maxCount;
-          i++
-        ) {
-          if (
-            conditions.every((cond) => cond(entityList[i])) &&
-            entityList[i].toLowerCase().includes(preferredKeyword.toLowerCase())
-          ) {
-            preferredFiltered.push(entityList[i]);
-          }
-        }
-        if (preferredFiltered.length > 0) {
-          return preferredFiltered;
-        }
-      }
-
-      // If no preferred match found, return any entity matching domain
-      const filtered: string[] = [];
-      for (
-        let i = 0;
-        i < entityList.length && filtered.length < maxCount;
-        i++
-      ) {
-        if (conditions.every((cond) => cond(entityList[i]))) {
-          filtered.push(entityList[i]);
-        }
-      }
-      return filtered;
-    };
-
-    let foundEntities = findEntity(entities, maxEntities, "yasno");
+    let foundEntities = findEntity(entities, maxEntities, includeDomains, "yasno");
     if (foundEntities.length === 0) {
-      foundEntities = findEntity(entitiesFallback, maxEntities, "yasno");
+      foundEntities = findEntity(entitiesFallback, maxEntities, includeDomains, "yasno");
     }
 
     return {
@@ -145,96 +90,126 @@ export class YasnoOutagesCard extends LitElement {
     };
   }
 
-  private async getOutageData(): Promise<OutageData> {
+  private async fetchBothDaysData(): Promise<void> {
     const entity = this.hass.states[this.config.entity];
 
-    if (!entity) {
-      return { hours: [] };
+    if (!entity || !entity.entity_id.startsWith("calendar.")) {
+      return;
     }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const dayAfterTomorrow = new Date(tomorrow);
+    dayAfterTomorrow.setDate(tomorrow.getDate() + 1);
+
+    try {
+      const response: HaCalendarServiceResponse = await this.hass.callWS({
+        type: "call_service",
+        domain: "calendar",
+        service: "get_events",
+        service_data: {
+          start_date_time: today.toISOString(),
+          end_date_time: dayAfterTomorrow.toISOString(),
+        },
+        target: {
+          entity_id: this.config.entity,
+        },
+        return_response: true,
+      });
+
+      const events = response?.response?.[this.config.entity]?.events || [];
+
+      const todayData = this._processEventsForDay(events, today);
+      const tomorrowData = this._processEventsForDay(events, tomorrow);
+
+      this.outageDataCache = {
+        today: todayData,
+        tomorrow: tomorrowData,
+      };
+
+      this._updateDisplayedData();
+    } catch (error) {
+      console.error("Error fetching calendar events:", error);
+    }
+  }
+
+  private _processEventsForDay(events: CalendarEvent[], targetDate: Date): OutageData {
+    const dayStart = new Date(targetDate);
+    dayStart.setHours(0, 0, 0, 0);
 
     const hours: HourData[] = Array.from({ length: 24 }, () => ({
       state: "powered" as const,
     }));
 
-    if (entity.entity_id.startsWith("calendar.")) {
-      try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
+    if (events && Array.isArray(events)) {
+      for (const event of events) {
+        const start = new Date(event.start);
+        const end = new Date(event.end);
 
-        const response: any = await this.hass.callWS({
-          type: "call_service",
-          domain: "calendar",
-          service: "get_events",
-          service_data: {
-            start_date_time: today.toISOString(),
-            end_date_time: tomorrow.toISOString(),
-          },
-          target: {
-            entity_id: this.config.entity,
-          },
-          return_response: true,
-        });
+        if (event.description === "NotPlanned") {
+          continue;
+        }
 
-        const events = response?.response?.[this.config.entity]?.events || [];
-        if (events && Array.isArray(events)) {
-          for (const event of events) {
-            const start = new Date(event.start);
-            const end = new Date(event.end);
+        if (start.toDateString() !== dayStart.toDateString()) {
+          continue;
+        }
 
-            // Check event type from description field
-            // Yasno integration sets description to "Definite" or "NotPlanned"
-            const eventType = event.description || "";
+        const startHour = start.getHours();
+        const startMinute = start.getMinutes();
+        const endHour = end.getHours();
+        const endMinute = end.getMinutes();
 
-            // Skip NotPlanned events - they're not actual outages
-            if (eventType === "NotPlanned") {
-              continue;
-            }
+        for (let h = startHour; h <= endHour; h++) {
+          let partType: HourData["partType"];
+          let partPercentage: HourData["partPercentage"];
 
-            // Definite events are certain outages
-            const outageType = "certain_outage";
-
-            // Only process today's events
-            if (start.toDateString() !== today.toDateString()) {
-              continue;
-            }
-
-            const startHour = start.getHours();
-            const startMinute = start.getMinutes();
-            const endHour = end.getHours();
-            const endMinute = end.getMinutes();
-
-            for (let h = startHour; h <= endHour; h++) {
-              let partType: HourData["partType"];
-              let partPercentage: HourData["partPercentage"];
-
-              if (h === startHour || h === endHour) {
-                if (h === startHour && startMinute > 0) {
-                  partType = "start";
-                  partPercentage = 100 - Math.floor((startMinute / 60) * 100);
-                } else if (h === endHour && endMinute > 0 && endMinute !== 59) {
-                  partType = "end";
-                  partPercentage = Math.floor((endMinute / 60) * 100);
-                }
-              }
-              hours[h] = {
-                state: outageType,
-                partType,
-                partPercentage,
-              };
+          if (h === startHour || h === endHour) {
+            if (h === startHour && startMinute > 0) {
+              partType = "start";
+              partPercentage = 100 - Math.floor((startMinute / 60) * 100);
+            } else if (h === endHour && endMinute > 0 && endMinute !== 59) {
+              partType = "end";
+              partPercentage = Math.floor((endMinute / 60) * 100);
             }
           }
+          hours[h] = {
+            state: "certain_outage",
+            partType,
+            partPercentage,
+          };
         }
-      } catch (error) {
-        console.error("Error fetching calendar events:", error);
       }
     }
 
-    const nowH = new Date().getHours();
-    hours[nowH].isCurrent = true;
+    const now = new Date();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (dayStart.toDateString() === today.toDateString()) {
+      const nowH = now.getHours();
+      hours[nowH].isCurrent = true;
+    }
 
-    return { hours };
+    return { hours, date: dayStart };
+  }
+
+  private _updateDisplayedData(): void {
+    if (!this.outageDataCache) {
+      this.outageData = { hours: [] };
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selectedDateString = this.selectedDate.toDateString();
+    const todayString = today.toDateString();
+
+    if (selectedDateString === todayString) {
+      this.outageData = this.outageDataCache.today;
+    } else {
+      this.outageData = this.outageDataCache.tomorrow;
+    }
   }
 
   private getStateClass(state: string, isPart: boolean): string {
@@ -257,30 +232,77 @@ export class YasnoOutagesCard extends LitElement {
     return `${String(hour).padStart(2, "0")}:00`;
   }
 
-  private formatDate(): string {
-    const today = new Date();
+  private formatDate(date?: Date): string {
+    const targetDate = date || new Date();
     const options: Intl.DateTimeFormatOptions = {
       weekday: "short",
       day: "numeric",
       month: "long",
     };
-    return today.toLocaleDateString(
-      this.hass?.locale?.language || "en",
-      options
-    );
+    return targetDate.toLocaleDateString(this.hass?.locale?.language || "en", options);
+  }
+
+  private _generateWeekDays(): void {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const days: { date: Date; label: string; isToday: boolean }[] = [];
+
+    const formatDayLabel = (date: Date): string => {
+      const weekdayOptions: Intl.DateTimeFormatOptions = {
+        weekday: "short",
+      };
+      const weekday = date.toLocaleDateString(this.hass?.locale?.language || "en", weekdayOptions);
+
+      const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+
+      const day = date.getDate().toString().padStart(2, "0");
+      const month = (date.getMonth() + 1).toString().padStart(2, "0");
+
+      return `${capitalizedWeekday}, ${day}.${month}`;
+    };
+
+    const todayLabel = formatDayLabel(today);
+    const tomorrowLabel = formatDayLabel(tomorrow);
+
+    days.push({ date: today, label: todayLabel, isToday: true });
+    days.push({ date: tomorrow, label: tomorrowLabel, isToday: false });
+
+    this.weekDays = days;
+  }
+
+  private _selectDay(date: Date): void {
+    this.selectedDate = new Date(date);
+    this.selectedDate.setHours(0, 0, 0, 0);
+    this._updateDisplayedData();
   }
 
   @property({ attribute: false })
   private outageData: OutageData = { hours: [] };
 
-  @property({ attribute: false })
-  private renderedTitle: string = "";
+  @state()
+  private outageDataCache: OutageDataCache | null = null;
 
   @property({ attribute: false })
-  private renderedSubtitle: string = "";
+  private renderedTitle = "";
+
+  @property({ attribute: false })
+  private renderedSubtitle = "";
+
+  @state()
+  private selectedDate: Date = new Date();
+
+  @state()
+  private weekDays: { date: Date; label: string; isToday: boolean }[] = [];
 
   async connectedCallback() {
     super.connectedCallback();
+    this.selectedDate = new Date();
+    this.selectedDate.setHours(0, 0, 0, 0);
+    this._generateWeekDays();
     await this.fetchOutageData();
     this._subscribeTemplate("title", this.config.title, (result) => {
       this.renderedTitle = result;
@@ -298,7 +320,6 @@ export class YasnoOutagesCard extends LitElement {
   async updated(changedProperties: Map<string, unknown>) {
     super.updated(changedProperties);
 
-    // Update dark mode attribute
     if (changedProperties.has("hass")) {
       const darkMode = this.hass?.themes?.darkMode ?? false;
       this.toggleAttribute("dark-mode", darkMode);
@@ -307,8 +328,11 @@ export class YasnoOutagesCard extends LitElement {
     if (changedProperties.has("hass") || changedProperties.has("config")) {
       await this.fetchOutageData();
 
-      // Re-subscribe to templates if config changed
       if (changedProperties.has("config")) {
+        if (this.config.show_weekly) {
+          this._generateWeekDays();
+        }
+
         this._subscribeTemplate("title", this.config.title, (result) => {
           this.renderedTitle = result;
         });
@@ -317,7 +341,6 @@ export class YasnoOutagesCard extends LitElement {
         });
       }
 
-      // Update subtitle entity display when hass changes (state updates)
       if (changedProperties.has("hass") && this.config.subtitle_entity) {
         this._subscribeTemplate("subtitle", this.config.subtitle, (result) => {
           this.renderedSubtitle = result;
@@ -327,25 +350,9 @@ export class YasnoOutagesCard extends LitElement {
   }
 
   private async fetchOutageData() {
-    this.outageData = await this.getOutageData();
+    await this.fetchBothDaysData();
   }
 
-  /**
-   * Check if a value is a Jinja2 template string
-   */
-  private _isTemplate(value: any): boolean {
-    return (
-      typeof value === "string" &&
-      (value.includes("{{") || value.includes("{%"))
-    );
-  }
-
-  /**
-   * Subscribe to a template or render content items
-   * @param key Unique identifier for this subscription
-   * @param content Template string, content item, or array of content items (supports both object and string format)
-   * @param callback Function to call with rendered result
-   */
   private _subscribeTemplate(
     key: string,
     content:
@@ -357,24 +364,19 @@ export class YasnoOutagesCard extends LitElement {
       | string[]
       | (SubtitleItem | string)[]
       | undefined,
-    callback: (result: string) => void
+    callback: (result: string) => void,
   ): void {
-    // Unsubscribe from previous subscription with this key
     this._unsubscribe(key);
 
-    // Handle default cases first
     if (!content) {
       if (key === "title") {
-        // Default title: Use entity's friendly_name or localized default
         const entity = this.hass.states[this.config.entity];
         const lang = this.hass?.locale?.language || this.hass?.language;
-        const defaultTitle =
-          entity?.attributes?.friendly_name || localize("default_title", lang);
+        const defaultTitle = entity?.attributes?.friendly_name || localize("default_title", lang);
         callback(defaultTitle);
         return;
       }
       if (key === "subtitle") {
-        // Default subtitle: Show current date
         callback(this.formatDate());
         return;
       }
@@ -382,22 +384,17 @@ export class YasnoOutagesCard extends LitElement {
       return;
     }
 
-    // Check if content is a string (template or plain text)
     if (typeof content === "string") {
-      // Check if it's a template
-      if (!this._isTemplate(content)) {
-        // Plain text
+      if (!isTemplate(content)) {
         callback(content);
         return;
       }
 
-      // Subscribe to template updates
       if (!this.hass?.connection) {
         console.warn("No hass connection available for template subscription");
         callback(content);
         return;
       }
-
       this.hass.connection
         .subscribeMessage<{ result: string }>(
           (msg) => {
@@ -406,7 +403,7 @@ export class YasnoOutagesCard extends LitElement {
           {
             type: "render_template",
             template: content,
-          }
+          },
         )
         .then((unsubscribe) => {
           this._templateUnsubscribes.set(key, unsubscribe);
@@ -418,7 +415,6 @@ export class YasnoOutagesCard extends LitElement {
       return;
     }
 
-    // Handle content items (object or array)
     const entityId =
       key === "subtitle" && this.config.subtitle_entity
         ? this.config.subtitle_entity
@@ -431,7 +427,6 @@ export class YasnoOutagesCard extends LitElement {
       return;
     }
 
-    // Render content items
     if (Array.isArray(content)) {
       callback(this._renderContentArray(content, entity));
     } else {
@@ -439,9 +434,6 @@ export class YasnoOutagesCard extends LitElement {
     }
   }
 
-  /**
-   * Unsubscribe from a specific template
-   */
   private _unsubscribe(key: string): void {
     const unsubscribe = this._templateUnsubscribes.get(key);
     if (unsubscribe) {
@@ -450,43 +442,31 @@ export class YasnoOutagesCard extends LitElement {
     }
   }
 
-  /**
-   * Unsubscribe from all templates
-   */
   private _unsubscribeAllTemplates(): void {
     this._templateUnsubscribes.forEach((unsubscribe) => unsubscribe());
     this._templateUnsubscribes.clear();
   }
 
-  /**
-   * Render a single content item (entity name, device, area, state, attribute, or text)
-   * Handles both object format {type: "state"} and string format "state" from ui_state_content
-   */
   private _renderContentItem(
     item: EntityNameItem | SubtitleItem | string,
-    entity: any
+    entity: HaEntity,
   ): string {
     if (!entity) return "";
 
-    // Handle string format from ui_state_content selector
     if (typeof item === "string") {
-      // Check if it's a standard type
       if (item === "name") {
         return entity.attributes?.friendly_name || entity.entity_id;
       }
       if (item === "state") {
-        return (this.hass as any).formatEntityState?.(entity) || entity.state;
+        return this.hass.formatEntityState?.(entity) || entity.state;
       }
-      // Check for special timestamp attributes
       if (item === "last_changed" || item === "last_updated") {
         return entity[item] || "";
       }
-      // Otherwise treat as attribute name
       const attrValue = entity.attributes?.[item];
-      return attrValue !== undefined ? String(attrValue) : item; // Return the string itself if not found
+      return attrValue !== undefined ? String(attrValue) : item;
     }
 
-    // Handle object format with type property
     const entityEntry = this.hass.entities?.[entity.entity_id];
 
     switch (item.type) {
@@ -517,7 +497,7 @@ export class YasnoOutagesCard extends LitElement {
 
       case "state":
         if ("state" in item) {
-          return (this.hass as any).formatEntityState?.(entity) || entity.state;
+          return this.hass.formatEntityState?.(entity) || entity.state;
         }
         return entity.state;
 
@@ -536,24 +516,17 @@ export class YasnoOutagesCard extends LitElement {
     }
   }
 
-  /**
-   * Render an array of content items, joining them with a space
-   * Handles both object format and string format from ui_state_content
-   */
   private _renderContentArray(
     items: (EntityNameItem | SubtitleItem | string)[],
-    entity: any
+    entity: HaEntity,
   ): string {
     if (!entity) return "";
     return items
       .map((item) => this._renderContentItem(item, entity))
-      .filter((text) => text) // Remove empty strings
+      .filter((text) => text)
       .join(" ");
   }
 
-  /**
-   * Render subtitle - handles timestamp sensors specially in arrays, otherwise uses rendered string
-   */
   private _renderSubtitle() {
     const subtitle = this.config.subtitle;
     const subtitleEntity = this.config.subtitle_entity || this.config.entity;
@@ -582,8 +555,8 @@ export class YasnoOutagesCard extends LitElement {
           typeof item === "string"
             ? item === "state"
             : typeof item === "object" && "type" in item
-            ? item.type === "state"
-            : false
+              ? item.type === "state"
+              : false,
         );
 
         if (hasStateItem) {
@@ -599,11 +572,7 @@ export class YasnoOutagesCard extends LitElement {
               ></hui-timestamp-display>`;
             }
             // Handle object format {type: "state"}
-            if (
-              typeof item === "object" &&
-              "type" in item &&
-              item.type === "state"
-            ) {
+            if (typeof item === "object" && "type" in item && item.type === "state") {
               return html`<hui-timestamp-display
                 .hass=${this.hass}
                 .ts=${new Date(entity.state)}
@@ -620,6 +589,25 @@ export class YasnoOutagesCard extends LitElement {
 
     // For non-timestamp entities, templates, or other content, use the rendered string
     return this.renderedSubtitle;
+  }
+
+  private _renderWeekTabs() {
+    return html`
+      <div class="week-tabs">
+        ${this.weekDays.map(
+          (day) => html`
+            <button
+              class="week-tab ${
+                day.date.toDateString() === this.selectedDate.toDateString() ? "selected" : ""
+              } ${day.isToday ? "today" : ""}"
+              @click=${() => this._selectDay(day.date)}
+            >
+              ${day.label}
+            </button>
+          `,
+        )}
+      </div>
+    `;
   }
 
   private _renderLegend() {
@@ -663,6 +651,7 @@ export class YasnoOutagesCard extends LitElement {
             <div class="title">${this.renderedTitle}</div>
             <div class="subtitle">${this._renderSubtitle()}</div>
           </div>
+          ${this.config.show_weekly ? this._renderWeekTabs() : ""}
           <div class="content">
             <div class="hours-grid">
               ${this.outageData.hours.map(
@@ -670,37 +659,43 @@ export class YasnoOutagesCard extends LitElement {
                   <div
                     class="hour-brick ${this.getStateClass(
                       hourData.state,
-                      hourData.partType !== undefined
-                    )} ${hourData.isCurrent == true ? "current" : ""}"
+                      hourData.partType !== undefined,
+                    )} ${hourData.isCurrent === true ? "current" : ""}"
                     title="${this.formatTime(hour)}"
-                    style="${hourData.partType !== undefined
-                      ? this.getPartialHourStyle(
-                          hourData.state,
-                          hourData.partPercentage || 0,
-                          hourData.partType || "start"
-                        )
-                      : ""}"
+                    style="${
+                      hourData.partType !== undefined
+                        ? this.getPartialHourStyle(
+                            hourData.state,
+                            hourData.partPercentage || 0,
+                            hourData.partType || "start",
+                          )
+                        : ""
+                    }"
                   >
                     <div
                       class="hour-label"
-                      style="${hourData.partType !== undefined
-                        ? this.getPartialTextStyle(
-                            hourData.state,
-                            hourData.partPercentage || 0,
-                            hourData.partType || "start"
-                          )
-                        : ""}"
+                      style="${
+                        hourData.partType !== undefined
+                          ? this.getPartialTextStyle(
+                              hourData.state,
+                              hourData.partPercentage || 0,
+                              hourData.partType || "start",
+                            )
+                          : ""
+                      }"
                     >
-                      ${hourData.partType === undefined
-                        ? hourData.state === "certain_outage" ||
-                          hourData.state === "possible_outage"
-                          ? html`<ha-icon icon="mdi:flash-off"></ha-icon>`
-                          : html`<ha-icon icon="mdi:flash"></ha-icon>`
-                        : ""}
-                      ${String(hour).padStart(2, "0")}:00
+                      ${
+                        hourData.partType === undefined
+                          ? hourData.state === "certain_outage" ||
+                            hourData.state === "possible_outage"
+                            ? html`<ha-icon icon="mdi:flash-off"></ha-icon>`
+                            : html`<ha-icon icon="mdi:flash"></ha-icon>`
+                          : ""
+                      }
+                      ${String(hour).padStart(2, "0")}<span>:00</span>
                     </div>
                   </div>
-                `
+                `,
               )}
             </div>
           </div>
@@ -713,34 +708,29 @@ export class YasnoOutagesCard extends LitElement {
   private getPartialHourStyle(
     state: string,
     percentage: number,
-    partType: "start" | "end"
+    partType: "start" | "end",
   ): string {
     const color =
-      state === "certain_outage"
-        ? "var(--yasno-certain-color)"
-        : "var(--yasno-outage-color)";
+      state === "certain_outage" ? "var(--yasno-certain-color)" : "var(--yasno-outage-color)";
 
     if (partType === "start") {
       // Start of outage: powered (left) -> outage (right)
       return `background-image: linear-gradient(to right, var(--yasno-powered-color) 0%, var(--yasno-powered-color) ${
         100 - percentage
       }%, ${color} ${100 - percentage}%, ${color} 100%);`;
-    } else {
-      // End of outage: outage (left) -> powered (right)
-      return `background-image: linear-gradient(to right, ${color} 0%, ${color} ${percentage}%, var(--yasno-powered-color) ${percentage}%, var(--yasno-powered-color) 100%);`;
     }
+    return `background-image: linear-gradient(to right, ${color} 0%, ${color} ${percentage}%, var(--yasno-powered-color) ${percentage}%, var(--yasno-powered-color) 100%);`;
   }
 
   private getPartialTextStyle(
     state: string,
     percentage: number,
-    partType: "start" | "end"
+    partType: "start" | "end",
   ): string {
     const direction = partType === "end" ? "to right" : "to left";
 
     // Text color for outage portion
-    const outageTextColor =
-      state === "certain_outage" ? "white" : "var(--yasno-font-color)";
+    const outageTextColor = state === "certain_outage" ? "white" : "var(--yasno-font-color)";
 
     return `background: linear-gradient(${direction}, ${outageTextColor} 0%, ${outageTextColor} ${percentage}%, var(--yasno-font-color) ${percentage}%, var(--yasno-font-color) 100%); -webkit-background-clip: text; background-clip: text; color: transparent;`;
   }
@@ -780,6 +770,8 @@ export class YasnoOutagesCard extends LitElement {
       ha-card {
         overflow: hidden;
         height: 100%;
+        --yasno-tab-font-size: var(--ha-font-size-s);
+        --yasno-tab-padding: var(--ha-space-2);
       }
 
       @container (width > 340px) {
@@ -788,6 +780,7 @@ export class YasnoOutagesCard extends LitElement {
           --yasno-grid-gap: var(--ha-space-3);
           --yasno-title-font-size: var(--ha-font-size-l);
           --yasno-subtitle-font-size: var(--ha-font-size-m);
+          --yasno-tab-padding: var(--ha-space-3);
         }
       }
 
@@ -810,8 +803,52 @@ export class YasnoOutagesCard extends LitElement {
         color: var(--secondary-text-color);
       }
 
+      .week-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        padding: var(--ha-space-2) var(--yasno-content-padding);
+        gap: var(--ha-space-2);
+        border-bottom: 1px solid var(--yasno-border-color);
+      }
+
+      .week-tab {
+        padding: var(--yasno-tab-padding);
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: var(--yasno-tab-font-size);
+        font-weight: var(--ha-font-weight-normal);
+        color: var(--secondary-text-color);
+        transition: all 0.2s ease;
+        text-align: center;
+      }
+
+      .week-tab:hover {
+        background: var(--secondary-background-color);
+      }
+
+      .week-tab.selected {
+        background: var(--primary-color);
+        color: var(--text-primary-color);
+        font-weight: var(--ha-font-weight-medium);
+      }
+
+      :host([dark-mode]) .week-tab.selected {
+        background: rgba(var(--rgb-primary-color), 0.16);
+        color: var(--primary-color);
+      }
+
+      .week-tab.today:not(.selected) {
+        color: var(--primary-color);
+        font-weight: var(--ha-font-weight-medium);
+      }
+
       .content {
         padding: var(--yasno-content-padding);
+
+        container-type: inline-size;
+        container-name: card-content;
       }
 
       .footer {
@@ -838,6 +875,13 @@ export class YasnoOutagesCard extends LitElement {
 
         container-type: inline-size;
         container-name: hour-brick;
+      }
+
+      @container card-content (width < 185px) {
+        .hour-brick {
+          border-width: 1px;
+          border-radius: 4px;
+        }
       }
 
       /* Powered state */
@@ -910,6 +954,17 @@ export class YasnoOutagesCard extends LitElement {
             height: 1em;
             width: 1em;
             margin-left: 0;
+          }
+
+          font-size: var(--ha-font-size-s);
+          font-weight: var(--ha-font-weight-normal);
+        }
+      }
+
+      @container hour-brick (width < 40px) {
+        .hour-label {
+          span {
+            display: none;
           }
 
           font-size: var(--ha-font-size-s);

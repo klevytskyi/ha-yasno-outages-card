@@ -15,15 +15,26 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.8.0",
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
     "@types/node": "^20.10.0",
     "esbuild": "^0.21.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
     "typescript": "^5.3.3"
   },
   "scripts": {
-    "build": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --minify --format=esm --sourcemap",
-    "dev": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --watch --format=esm",
+    "build": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --minify --format=esm --sourcemap --define:__VERSION__='\"'$npm_package_version'\"'",
+    "dev": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --watch --format=esm --define:__VERSION__='\"'$npm_package_version'\"'",
     "format": "biome format --write src/",
     "lint": "biome lint src/",
-    "check": "biome check --apply src/"
+    "check": "biome check --apply src/",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "biome check --write --no-errors-on-unmatched",
+      "biome format --write"
+    ]
   }
 }
