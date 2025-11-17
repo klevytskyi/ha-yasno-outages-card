@@ -27,14 +27,17 @@ src/
 
 **Key Pattern**: Modular separation - types, utils, and localization are extracted for reusability. Main card and editor are separate custom elements.
 
-## Data Flow: Calendar → Events → Hour Bricks
+## Data Flow: Calendar → Cache → Render
 
 1. **Source**: Home Assistant calendar entity from [ha-yasno-outages integration](https://github.com/denysdovhan/ha-yasno-outages)
-2. **Fetch**: `getOutageData()` calls `hass.callWS()` to get calendar events for today (00:00 - 23:59)
-3. **Transform**: Events → 24-element `HourData[]` array with states: `powered | certain_outage | possible_outage`
-4. **Render**: Grid of hour bricks with CSS variables for theming
+2. **Fetch**: `fetchBothDaysData()` calls `hass.callWS()` once to get events for today + tomorrow (00:00 - 48:00)
+3. **Cache**: `_processEventsForDay()` transforms events → two `OutageData` objects stored in `outageDataCache`
+4. **Display**: `_updateDisplayedData()` switches between cached days instantly (no refetch)
+5. **Render**: Grid of 24 hour bricks with CSS variables for theming
 
-**Partial Hours**: Events with `start_minute`/`end_minute` trigger gradient backgrounds (see `getPartialHourStyle()` and `getPartialTextStyle()`)
+**Partial Hours**: Events with mid-hour start/end → gradient backgrounds via `getPartialHourStyle()` + `getPartialTextStyle()`
+
+**Weekly Tabs**: When `show_weekly: true`, renders today/tomorrow tabs. Tab switching uses cached data for instant response.
 
 ## Critical Development Patterns
 
@@ -52,7 +55,8 @@ Templates (`{{ ... }}` or `{% ... %}`) use `hass.connection.subscribeMessage()` 
 ### Content vs Template Mode
 
 - **Template mode**: String with Jinja2 syntax → subscribe to updates
-- **Content mode**: Array of `EntityNameItem[]` or `SubtitleItem[]` → render with `renderContentArray()`
+- **Content mode**: Array of `EntityNameItem[]` or `SubtitleItem[]` → render with `_renderContentArray()`
+- **Important**: Rendering functions (`_renderContentItem`, `_renderContentArray`) stay in component (need `this.hass` access)
 - Editor toggles between modes; normalization happens in `utils.normalizeEntityNameValue()`
 
 ### Dark Mode Detection
@@ -71,24 +75,34 @@ npm run dev      # Watch mode - auto-rebuild on save
 npm run build    # Production build (minified)
 npm run format   # Biome formatter
 npm run lint     # Biome linter
+npm run check    # Biome check & auto-fix
 ```
 
-**Build Output**: Single `dist/yasno-outages-card.js` (39-40kb minified) - this is the HACS distribution file.
+**Build Output**: Single `dist/yasno-outages-card.js` (~43.7kb minified) - this is the HACS distribution file.
 
-**After Build**:
+**Version Injection**: `__VERSION__` is replaced at build time via esbuild `--define` flag from `package.json` version.
 
-- Commit changes
-- Update version in `package.json`
-- Create git tag: `git tag v1.x.x`
-- Push with tags: `git push origin main --tags`
-- GitHub release: `gh release create v1.x.x dist/yasno-outages-card.js --title "..." --notes "..."`
+**Git Hooks (Husky + Lint-staged)**:
+
+- **Pre-commit**: Automatically runs `biome check --write` and `biome format --write` on staged `.ts` files
+- **Commit-msg**: Validates commit messages follow Conventional Commits format
+- Configure in `package.json` → `lint-staged` section
+
+**Release Workflow**:
+
+1. Update version in `package.json`
+2. Build: `npm run build`
+3. Commit: `git commit -m "build: release v1.x.x"`
+4. Tag: `git tag v1.x.x`
+5. Push: `git push origin master --tags`
+6. GitHub Actions auto-creates release with compiled JS
 
 ## TypeScript Conventions
 
 - **Decorators**: `@customElement`, `@property`, `@state` from Lit
 - **Config**: `tsconfig.json` has `experimentalDecorators: true` and `useDefineForClassFields: false` (required for Lit)
 - **JSON imports**: Enabled via `resolveJsonModule: true` for locales
-<!-- - **Avoid `any`**: Known linter warnings exist but build works - prefer fixing with proper types -->
+- **Code Quality**: Biome enforces strict rules - no `any`, no `==`, no `forEach` (use `for...of`)
 
 ## Integration Points
 
@@ -143,13 +157,19 @@ scp dist/* root@homeassistant.local:homeassistant/www/
 3. **Partial hours**: Gradients require both background style (`getPartialHourStyle`) AND text style (`getPartialTextStyle`)
 4. **Localization**: Always use `localize(key, hass.locale?.language)`, never hardcode strings
 5. **Entity states**: Access via `this.hass.states[entityId]`, check existence before use
+6. **Data caching**: Weekly tabs use cached data - don't refetch on tab switch
+7. **Rendering functions**: Keep component-dependent renders in card class, not utils (need `this.hass`)
 
 ## Reference Files
 
-- `src/yasno-outages-card.ts` (lines 140-180): `getStubConfig()` shows entity finding pattern
-- `src/utils.ts`: Pure functions demonstrate content item rendering logic
+- `src/yasno-outages-card.ts` (~1027 lines): Main component with caching, rendering, template subscription
+- `src/editor.ts`: Visual config editor with template/content mode switching
+- `src/utils.ts`: Pure helpers (findEntity, isTemplate, normalizeEntityNameValue)
+- `src/types.ts`: TypeScript interfaces (clean, no inline comments)
+- `src/localize.ts`: i18n system with explicit language policy
 - `examples/`: YAML config samples for testing
-- `BUILD.md`: Full build/release workflow documentation
+- `BUILD.md` & `DEVELOPMENT.md`: Build/release workflow documentation
+- `commitlint.config.js` + `.husky/`: Git hooks configuration
 
 ## Authoritative Sources
 
