@@ -6,6 +6,15 @@ A custom Home Assistant card for visualizing 24-hour power outage schedules from
 
 > **Design Inspiration**: The visual design of this card is inspired by the "Київ Цифровий" mobile app by "КП ГІОЦ", which provides a clean and intuitive way to display power outage schedules.
 
+## Screenshots
+
+Light theme             |  Dark theme
+:-------------------------:|:-------------------------:
+<img src="images/ha-yasno-outages-card-light.png" alt="Light Theme Screenshot" height="500">  |  <img src="images/ha-yasno-outages-card-dark.png" alt="Dark Theme Screenshot" height="500">
+
+
+
+
 ## Prerequisites
 
 This card requires the [ha-yasno-outages integration](https://github.com/denysdovhan/ha-yasno-outages) to be installed and configured in your Home Assistant instance. The integration provides calendar entities with power outage schedule data from Yasno.
@@ -117,13 +126,6 @@ This card requires the [ha-yasno-outages integration](https://github.com/denysdo
 ```
 
 See the examples directory for more configuration samples.
-
-## Screenshots
-
-### Light/Dark Theme
-
-<img src="images/ha-yasno-outages-card-light.png" alt="Light Theme Screenshot" height="500">
-<img src="images/ha-yasno-outages-card-dark.png" alt="Dark Theme Screenshot" height="500">
 
 ## Compatibility
 
