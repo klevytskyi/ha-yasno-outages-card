@@ -174,11 +174,19 @@ export class YasnoOutagesCard extends LitElement {
 
         const startHour = effectiveStart.getHours();
         const startMinute = effectiveStart.getMinutes();
-        const endHour = effectiveEnd.getHours();
-        const endMinute = effectiveEnd.getMinutes();
+        let endHour = effectiveEnd.getHours();
+        let endMinute = effectiveEnd.getMinutes();
+
+        if (endMinute === 0 && endHour > 0) {
+          endHour = endHour - 1;
+          endMinute = 59;
+        } else if (endMinute === 0 && endHour === 0) {
+          endHour = 23;
+          endMinute = 59;
+        }
 
         const isPartialStart = effectiveStart.getTime() === start.getTime() && startMinute > 0;
-        const isPartialEnd = effectiveEnd.getTime() === end.getTime() && endMinute > 0;
+        const isPartialEnd = endMinute > 0 && endMinute < 59;
 
         for (let h = startHour; h <= endHour; h++) {
           let partType: HourData["partType"];
