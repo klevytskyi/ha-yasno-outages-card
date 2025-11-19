@@ -1,6 +1,6 @@
 {
   "name": "ha-yasno-outages-card",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Home Assistant custom card for Yasno power outages visualization",
   "main": "dist/yasno-outages-card.js",
   "repository": {
@@ -25,7 +25,8 @@
   },
   "scripts": {
     "build": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --minify --format=esm --sourcemap --define:__VERSION__='\"'$npm_package_version'\"'",
-    "dev": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card.js --watch --format=esm --define:__VERSION__='\"'$npm_package_version'\"'",
+    "build:dev": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card-dev.js --format=esm --sourcemap --define:__VERSION__='\"'$npm_package_version'\"' --define:__DEV__=true",
+    "dev": "esbuild src/yasno-outages-card.ts --bundle --outfile=dist/yasno-outages-card-dev.js --watch --format=esm --sourcemap --define:__VERSION__='\"'$npm_package_version'\"' --define:__DEV__=true",
     "format": "biome format --write src/",
     "lint": "biome lint src/",
     "check": "biome check --apply src/",

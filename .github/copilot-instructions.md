@@ -138,11 +138,16 @@ hass.connection.subscribeMessage(callback, {
 ## Testing in Home Assistant
 
 ```bash
-# Development setup
+# Development setup - outputs yasno-outages-card-dev.js with custom:yasno-outages-card-dev type
 npm run dev &
-scp dist/* root@homeassistant.local:homeassistant/www/
+scp dist/yasno-outages-card-dev.js root@homeassistant.local:homeassistant/www/
 # Hard refresh browser (Cmd+Shift+R / Ctrl+Shift+R)
+
+# Add resource in HA: /local/yasno-outages-card-dev.js
+# Use card type: custom:yasno-outages-card-dev
 ```
+
+**Dev mode benefits**: Separate custom element name allows testing alongside HACS-installed production version without conflicts.
 
 ## Design Constraints
 

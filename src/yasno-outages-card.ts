@@ -24,21 +24,26 @@ declare global {
   }
 }
 
+// @ts-ignore - __DEV__ is injected by esbuild for dev builds
+const DEV_MODE = typeof __DEV__ !== "undefined" && __DEV__;
+const CARD_TYPE = DEV_MODE ? "yasno-outages-card-dev" : "yasno-outages-card";
+const CARD_NAME = DEV_MODE ? "Yasno Outages Card (Dev)" : "Yasno Outages Card";
+
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "yasno-outages-card",
-  name: "Yasno Outages Card",
+  type: CARD_TYPE,
+  name: CARD_NAME,
   description: "Display 24-hour power outage schedule from Yasno calendar integration",
   preview: true,
 });
 
 console.info(
   // @ts-ignore - __VERSION__ is injected by esbuild
-  `%c YASNO-CARD %c ${__VERSION__} `,
+  `%c YASNO-CARD ${DEV_MODE ? "(DEV)" : ""} %c ${__VERSION__} `,
   "color: white; background: #ffc107; font-weight: 700;",
   "color: #ffc107; background: white; font-weight: 700;",
 );
-@customElement("yasno-outages-card")
+@customElement(CARD_TYPE)
 export class YasnoOutagesCard extends LitElement {
   @property({ attribute: false })
   hass!: HomeAssistant;
@@ -67,7 +72,8 @@ export class YasnoOutagesCard extends LitElement {
   }
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
-    return document.createElement("yasno-outages-card-editor") as LovelaceCardEditor;
+    const editorType = DEV_MODE ? "yasno-outages-card-editor-dev" : "yasno-outages-card-editor";
+    return document.createElement(editorType) as LovelaceCardEditor;
   }
 
   public static getStubConfig(
@@ -84,7 +90,7 @@ export class YasnoOutagesCard extends LitElement {
     }
 
     return {
-      type: "custom:yasno-outages-card",
+      type: `custom:${CARD_TYPE}`,
       entity: foundEntities[0] || "",
       title: "",
     };
@@ -152,28 +158,40 @@ export class YasnoOutagesCard extends LitElement {
           continue;
         }
 
-        if (start.toDateString() !== dayStart.toDateString()) {
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const eventStartsBeforeDay = start < dayStart;
+        const eventEndsAfterDayStart = end > dayStart;
+        const eventStartsBeforeDayEnd = start <= dayEnd;
+
+        if (!eventStartsBeforeDayEnd || !eventEndsAfterDayStart) {
           continue;
         }
 
-        const startHour = start.getHours();
-        const startMinute = start.getMinutes();
-        const endHour = end.getHours();
-        const endMinute = end.getMinutes();
+        const effectiveStart = eventStartsBeforeDay ? dayStart : start;
+        const effectiveEnd = end > dayEnd ? dayEnd : end;
+
+        const startHour = effectiveStart.getHours();
+        const startMinute = effectiveStart.getMinutes();
+        const endHour = effectiveEnd.getHours();
+        const endMinute = effectiveEnd.getMinutes();
+
+        const isPartialStart = effectiveStart.getTime() === start.getTime() && startMinute > 0;
+        const isPartialEnd = effectiveEnd.getTime() === end.getTime() && endMinute > 0;
 
         for (let h = startHour; h <= endHour; h++) {
           let partType: HourData["partType"];
           let partPercentage: HourData["partPercentage"];
 
-          if (h === startHour || h === endHour) {
-            if (h === startHour && startMinute > 0) {
-              partType = "start";
-              partPercentage = 100 - Math.floor((startMinute / 60) * 100);
-            } else if (h === endHour && endMinute > 0 && endMinute !== 59) {
-              partType = "end";
-              partPercentage = Math.floor((endMinute / 60) * 100);
-            }
+          if (h === startHour && isPartialStart) {
+            partType = "start";
+            partPercentage = 100 - Math.floor((startMinute / 60) * 100);
+          } else if (h === endHour && isPartialEnd) {
+            partType = "end";
+            partPercentage = Math.floor((endMinute / 60) * 100);
           }
+
           hours[h] = {
             state: "certain_outage",
             partType,
@@ -1022,5 +1040,6 @@ export class YasnoOutagesCard extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "yasno-outages-card": YasnoOutagesCard;
+    "yasno-outages-card-dev": YasnoOutagesCard;
   }
 }

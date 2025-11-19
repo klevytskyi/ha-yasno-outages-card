@@ -4,7 +4,11 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, YasnoOutageConfig } from "./types";
 import { isTemplate, normalizeEntityNameValue } from "./utils";
 
-@customElement("yasno-outages-card-editor")
+// @ts-ignore - __DEV__ is injected by esbuild for dev builds
+const DEV_MODE = typeof __DEV__ !== "undefined" && __DEV__;
+const EDITOR_TYPE = DEV_MODE ? "yasno-outages-card-editor-dev" : "yasno-outages-card-editor";
+
+@customElement(EDITOR_TYPE)
 export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEditor {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @state() private _config!: YasnoOutageConfig;
@@ -266,5 +270,6 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
 declare global {
   interface HTMLElementTagNameMap {
     "yasno-outages-card-editor": YasnoOutagesCardEditor;
+    "yasno-outages-card-editor-dev": YasnoOutagesCardEditor;
   }
 }
