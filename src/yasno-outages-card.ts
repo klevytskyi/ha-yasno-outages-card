@@ -97,9 +97,12 @@ export class YasnoOutagesCard extends LitElement {
   }
 
   private async fetchBothDaysData(): Promise<void> {
-    const entity = this.hass.states[this.config.entity];
+    const primaryEntityId = Array.isArray(this.config.entity)
+      ? this.config.entity[0]
+      : this.config.entity;
+    const primaryEntity = this.hass.states[primaryEntityId];
 
-    if (!entity || !entity.entity_id.startsWith("calendar.")) {
+    if (!primaryEntity || !primaryEntity.entity_id.startsWith("calendar.")) {
       return;
     }
 
@@ -111,6 +114,14 @@ export class YasnoOutagesCard extends LitElement {
     dayAfterTomorrow.setDate(tomorrow.getDate() + 1);
 
     try {
+      const entitiesToFetch = (
+        Array.isArray(this.config.entity) ? this.config.entity : [this.config.entity]
+      ).filter((id) => this.hass.states[id]?.entity_id.startsWith("calendar."));
+
+      if (entitiesToFetch.length === 0) {
+        return;
+      }
+
       const response: HaCalendarServiceResponse = await this.hass.callWS({
         type: "call_service",
         domain: "calendar",
@@ -120,15 +131,19 @@ export class YasnoOutagesCard extends LitElement {
           end_date_time: dayAfterTomorrow.toISOString(),
         },
         target: {
-          entity_id: this.config.entity,
+          entity_id: entitiesToFetch,
         },
         return_response: true,
       });
 
-      const events = response?.response?.[this.config.entity]?.events || [];
+      let allEvents: CalendarEvent[] = [];
+      for (const entityId of entitiesToFetch) {
+        const entityEvents = response?.response?.[entityId]?.events || [];
+        allEvents = allEvents.concat(entityEvents);
+      }
 
-      const todayData = this._processEventsForDay(events, today);
-      const tomorrowData = this._processEventsForDay(events, tomorrow);
+      const todayData = this._processEventsForDay(allEvents, today);
+      const tomorrowData = this._processEventsForDay(allEvents, tomorrow);
 
       this.outageDataCache = {
         today: todayData,
@@ -141,6 +156,10 @@ export class YasnoOutagesCard extends LitElement {
     }
   }
 
+  private _getPrimaryEntityId(): string {
+    return Array.isArray(this.config.entity) ? this.config.entity[0] : this.config.entity;
+  }
+
   private _processEventsForDay(events: CalendarEvent[], targetDate: Date): OutageData {
     const dayStart = new Date(targetDate);
     dayStart.setHours(0, 0, 0, 0);
@@ -149,12 +168,29 @@ export class YasnoOutagesCard extends LitElement {
       state: "powered" as const,
     }));
 
+    let scheduleStatus: "applies" | "waiting" | undefined;
+
     if (events && Array.isArray(events)) {
       for (const event of events) {
         const start = new Date(event.start);
         const end = new Date(event.end);
 
-        if (event.description === "NotPlanned") {
+        const description = (event.description || "").toLowerCase();
+        const summary = (event.summary || "").toLowerCase();
+
+        // Capture schedule markers (date-only events)
+        if (description === "schedule_applies" || description === "waiting_for_schedule") {
+          const dayEnd = new Date(dayStart);
+          dayEnd.setHours(23, 59, 59, 999);
+          // If this schedule event overlaps the target day, set status
+          if (start <= dayEnd && end > dayStart) {
+            scheduleStatus = description === "schedule_applies" ? "applies" : "waiting";
+          }
+          continue; // Do not treat as outage blocks
+        }
+
+        // Skip explicitly non-planned markers
+        if (description === "notplanned" || description === "not_planned") {
           continue;
         }
 
@@ -177,6 +213,7 @@ export class YasnoOutagesCard extends LitElement {
         let endHour = effectiveEnd.getHours();
         let endMinute = effectiveEnd.getMinutes();
 
+        // Exclusive end hour handling
         if (endMinute === 0 && endHour > 0) {
           endHour = endHour - 1;
           endMinute = 59;
@@ -187,6 +224,9 @@ export class YasnoOutagesCard extends LitElement {
 
         const isPartialStart = effectiveStart.getTime() === start.getTime() && startMinute > 0;
         const isPartialEnd = endMinute > 0 && endMinute < 59;
+
+        const normalizedDesc = description.replace(/[^a-z]/g, "");
+        const isPossibleOutage = normalizedDesc === "possible" || normalizedDesc === "probable";
 
         for (let h = startHour; h <= endHour; h++) {
           let partType: HourData["partType"];
@@ -201,10 +241,19 @@ export class YasnoOutagesCard extends LitElement {
           }
 
           hours[h] = {
-            state: "certain_outage",
+            state: isPossibleOutage ? "possible_outage" : "certain_outage",
             partType,
             partPercentage,
           };
+        }
+      }
+    }
+
+    // Downgrade all certain outages to possible if schedule not confirmed
+    if (scheduleStatus === "waiting") {
+      for (let i = 0; i < hours.length; i++) {
+        if (hours[i].state === "certain_outage") {
+          hours[i].state = "possible_outage";
         }
       }
     }
@@ -217,7 +266,7 @@ export class YasnoOutagesCard extends LitElement {
       hours[nowH].isCurrent = true;
     }
 
-    return { hours, date: dayStart };
+    return { hours, date: dayStart, scheduleStatus };
   }
 
   private _updateDisplayedData(): void {
@@ -396,7 +445,7 @@ export class YasnoOutagesCard extends LitElement {
 
     if (!content) {
       if (key === "title") {
-        const entity = this.hass.states[this.config.entity];
+        const entity = this.hass.states[this._getPrimaryEntityId()];
         const lang = this.hass?.locale?.language || this.hass?.language;
         const defaultTitle = entity?.attributes?.friendly_name || localize("default_title", lang);
         callback(defaultTitle);
@@ -444,7 +493,7 @@ export class YasnoOutagesCard extends LitElement {
     const entityId =
       key === "subtitle" && this.config.subtitle_entity
         ? this.config.subtitle_entity
-        : this.config.entity;
+        : this._getPrimaryEntityId();
 
     const entity = this.hass.states[entityId];
 
@@ -555,7 +604,7 @@ export class YasnoOutagesCard extends LitElement {
 
   private _renderSubtitle() {
     const subtitle = this.config.subtitle;
-    const subtitleEntity = this.config.subtitle_entity || this.config.entity;
+    const subtitleEntity = this.config.subtitle_entity || this._getPrimaryEntityId();
     const entity = this.hass.states[subtitleEntity];
 
     // Handle timestamp sensors with state item
@@ -679,6 +728,7 @@ export class YasnoOutagesCard extends LitElement {
           </div>
           ${this.config.show_weekly ? this._renderWeekTabs() : ""}
           <div class="content">
+            <!-- Schedule status badge intentionally not rendered. Logic retained for future use. -->
             <div class="hours-grid">
               ${this.outageData.hours.map(
                 (hourData: HourData, hour) => html`
@@ -828,6 +878,8 @@ export class YasnoOutagesCard extends LitElement {
         font-weight: var(--ha-font-weight-normal);
         color: var(--secondary-text-color);
       }
+
+      /* Schedule badge styles removed (feature disabled visually). */
 
       .week-tabs {
         display: grid;

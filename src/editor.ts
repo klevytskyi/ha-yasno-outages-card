@@ -97,9 +97,10 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
       <div class="card-config">
         <ha-selector
           .hass=${this.hass}
-          .selector=${{ entity: { domain: "calendar" } }}
+          .selector=${{ entity: { domain: "calendar", multiple: true } }}
           .value=${this._config.entity}
-          .label=${"Calendar Entity (Required)"}
+          .label=${"Calendar Entities (Required)"}
+          .helper=${"Select one or multiple Yasno outage calendar entities"}
           .required=${true}
           @value-changed=${this._valueChanged}
           .configValue=${"entity"}
@@ -144,7 +145,11 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
                 .value=${this._config.title}
                 .label=${"Title"}
                 .helper=${"Select entity names or enter custom text. Note: Custom text will show as invalid but will work correctly."}
-                .context=${{ entity: this._config.entity }}
+                .context=${{
+                  entity: Array.isArray(this._config.entity)
+                    ? this._config.entity[0]
+                    : this._config.entity,
+                }}
                 @value-changed=${this._valueChanged}
                 .configValue=${"title"}
               ></ha-selector>
@@ -196,7 +201,11 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
                 .label=${"Subtitle"}
                 .helper=${"Select entity state/attributes or enter custom text. Note: Custom text will show as invalid but will work correctly."}
                 .context=${{
-                  filter_entity: this._config.subtitle_entity || this._config.entity,
+                  filter_entity:
+                    this._config.subtitle_entity ||
+                    (Array.isArray(this._config.entity)
+                      ? this._config.entity[0]
+                      : this._config.entity),
                 }}
                 @value-changed=${this._valueChanged}
                 .configValue=${"subtitle"}

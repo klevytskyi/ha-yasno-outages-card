@@ -58,7 +58,8 @@ export type SubtitleItem =
   | { type: "text"; text: string };
 
 export interface YasnoOutageConfig extends LovelaceCardConfig {
-  entity: string;
+  // Can be a single calendar entity or multiple calendar entities
+  entity: string | string[];
   title?: string | EntityNameItem | EntityNameItem[];
   subtitle?: string | SubtitleItem | SubtitleItem[] | string[] | (SubtitleItem | string)[];
   subtitle_entity?: string;
@@ -69,6 +70,7 @@ export interface YasnoOutageConfig extends LovelaceCardConfig {
 export interface OutageData {
   hours: HourData[];
   date?: Date;
+  scheduleStatus?: "applies" | "waiting";
 }
 
 export interface OutageDataCache {

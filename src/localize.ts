@@ -21,6 +21,8 @@ export interface Translations {
   legend_certain_outage: string;
   legend_possible_outage: string;
   default_title: string;
+  schedule_applies: string;
+  waiting_for_schedule: string;
 }
 
 const translations: Record<string, Translations> = {

@@ -3,5 +3,7 @@
   "legend_powered": "Є світло",
   "legend_certain_outage": "Немає світла",
   "legend_possible_outage": "Можливе відключення",
-  "default_title": "Графік відключень"
+  "default_title": "Графік відключень",
+  "schedule_applies": "Графік діє",
+  "waiting_for_schedule": "Очікування графіка"
 }
