@@ -5,5 +5,6 @@
   "legend_possible_outage": "Можливе відключення",
   "default_title": "Графік відключень",
   "schedule_applies": "Графік діє",
-  "waiting_for_schedule": "Очікування графіка"
+  "waiting_for_schedule": "Очікування графіка",
+  "emergency_outages": "Аварійні відключення"
 }

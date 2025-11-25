@@ -65,12 +65,15 @@ export interface YasnoOutageConfig extends LovelaceCardConfig {
   subtitle_entity?: string;
   show_legend?: boolean;
   show_weekly?: boolean;
+  show_emergency_badge?: boolean;
+  show_schedule_badge?: boolean;
 }
 
 export interface OutageData {
   hours: HourData[];
   date?: Date;
   scheduleStatus?: "applies" | "waiting";
+  emergencyOutages?: boolean;
 }
 
 export interface OutageDataCache {

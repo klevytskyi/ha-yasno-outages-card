@@ -241,6 +241,36 @@ export class YasnoOutagesCardEditor extends LitElement implements LovelaceCardEd
             }}
           ></ha-switch>
         </div>
+
+        <div class="switch-container">
+          <label>Show emergency badge</label>
+          <ha-switch
+            .checked=${this._config.show_emergency_badge !== false}
+            @change=${(ev: Event) => {
+              const target = ev.target as HTMLInputElement;
+              this._config = {
+                ...this._config,
+                show_emergency_badge: target.checked,
+              };
+              this._fireConfigChanged();
+            }}
+          ></ha-switch>
+        </div>
+
+        <div class="switch-container">
+          <label>Show schedule badge</label>
+          <ha-switch
+            .checked=${this._config.show_schedule_badge !== false}
+            @change=${(ev: Event) => {
+              const target = ev.target as HTMLInputElement;
+              this._config = {
+                ...this._config,
+                show_schedule_badge: target.checked,
+              };
+              this._fireConfigChanged();
+            }}
+          ></ha-switch>
+        </div>
       </div>
     `;
   }

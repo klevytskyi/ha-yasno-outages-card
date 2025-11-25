@@ -169,6 +169,11 @@ export class YasnoOutagesCard extends LitElement {
     }));
 
     let scheduleStatus: "applies" | "waiting" | undefined;
+    let emergencyOutages = false;
+
+    if (DEV_MODE) {
+      console.log("[YASNO CARD] Received events for processing:", events);
+    }
 
     if (events && Array.isArray(events)) {
       for (const event of events) {
@@ -177,6 +182,17 @@ export class YasnoOutagesCard extends LitElement {
 
         const description = (event.description || "").toLowerCase();
         const summary = (event.summary || "").toLowerCase();
+
+        // Capture emergency outages marker (date-only events)
+        if (description === "emergency_shutdowns") {
+          const dayEnd = new Date(dayStart);
+          dayEnd.setHours(23, 59, 59, 999);
+          // If this emergency event overlaps the target day, set flag
+          if (start <= dayEnd && end > dayStart) {
+            emergencyOutages = true;
+          }
+          continue; // Do not treat as outage blocks
+        }
 
         // Capture schedule markers (date-only events)
         if (description === "schedule_applies" || description === "waiting_for_schedule") {
@@ -266,7 +282,7 @@ export class YasnoOutagesCard extends LitElement {
       hours[nowH].isCurrent = true;
     }
 
-    return { hours, date: dayStart, scheduleStatus };
+    return { hours, date: dayStart, scheduleStatus, emergencyOutages };
   }
 
   private _updateDisplayedData(): void {
@@ -723,12 +739,36 @@ export class YasnoOutagesCard extends LitElement {
       <div class="container">
         <ha-card>
           <div class="header">
-            <div class="title">${this.renderedTitle}</div>
+            <div class="title">
+              ${this.renderedTitle}
+              ${
+                this.config.show_emergency_badge !== false && this.outageData?.emergencyOutages
+                  ? html`<div class="emergency-badge">
+                    ${localize("emergency_outages", this.hass.locale?.language)}
+                  </div>`
+                  : ""
+              }
+              ${
+                this.config.show_schedule_badge !== false &&
+                this.outageData?.scheduleStatus === "applies"
+                  ? html`<div class="schedule-badge schedule-applies">
+                    ${localize("schedule_applies", this.hass.locale?.language)}
+                  </div>`
+                  : ""
+              }
+              ${
+                this.config.show_schedule_badge !== false &&
+                this.outageData?.scheduleStatus === "waiting"
+                  ? html`<div class="schedule-badge schedule-waiting">
+                    ${localize("waiting_for_schedule", this.hass.locale?.language)}
+                  </div>`
+                  : ""
+              }
+            </div>
             <div class="subtitle">${this._renderSubtitle()}</div>
           </div>
-          ${this.config.show_weekly ? this._renderWeekTabs() : ""}
           <div class="content">
-            <!-- Schedule status badge intentionally not rendered. Logic retained for future use. -->
+            ${this.config.show_weekly ? this._renderWeekTabs() : ""}
             <div class="hours-grid">
               ${this.outageData.hours.map(
                 (hourData: HourData, hour) => html`
@@ -847,7 +887,7 @@ export class YasnoOutagesCard extends LitElement {
         overflow: hidden;
         height: 100%;
         --yasno-tab-font-size: var(--ha-font-size-s);
-        --yasno-tab-padding: var(--ha-space-2);
+        --yasno-tab-padding: var(--ha-space-1);
       }
 
       @container (width > 340px) {
@@ -856,7 +896,7 @@ export class YasnoOutagesCard extends LitElement {
           --yasno-grid-gap: var(--ha-space-3);
           --yasno-title-font-size: var(--ha-font-size-l);
           --yasno-subtitle-font-size: var(--ha-font-size-m);
-          --yasno-tab-padding: var(--ha-space-3);
+          --yasno-tab-padding: var(--ha-space-2);
         }
       }
 
@@ -865,12 +905,20 @@ export class YasnoOutagesCard extends LitElement {
         border-bottom: 1px solid var(--yasno-border-color);
         display: flex;
         flex-direction: column;
+        justify-content: flex-start;
+        align-items: flex-start;
         gap: var(--ha-space-1);
       }
 
       .title {
         font-size: var(--yasno-title-font-size);
         font-weight: var(--ha-font-weight-medium);
+        display: flex;
+        align-items: baseline;
+        justify-content: flex-start;
+        gap: var(--ha-space-1) var(--ha-space-3);
+        flex-wrap: wrap;
+        width: 100%;
       }
 
       .subtitle {
@@ -879,14 +927,40 @@ export class YasnoOutagesCard extends LitElement {
         color: var(--secondary-text-color);
       }
 
-      /* Schedule badge styles removed (feature disabled visually). */
+      .emergency-badge,
+      .schedule-badge {
+        display: inline-block;
+        padding: 0 var(--ha-space-3);
+        border-radius: var(--ha-border-radius-lg);
+        font-size: var(--ha-font-size-s);
+        font-weight: var(--ha-font-weight-medium);
+        letter-spacing: 0.3px;
+        text-align: center;
+        user-select: none;
+        // margin-left: auto;
+      }
+
+      .emergency-badge {
+        background: var(--error-color, #f44336);
+        color: #fff;
+      }
+
+      .schedule-badge.schedule-applies {
+        background: var(--warning-color, #ff9800);
+        color: #fff;
+      }
+
+      .schedule-badge.schedule-waiting {
+        background: var(--disabled-color, #9e9e9e);
+        color: #fff;
+      }
 
       .week-tabs {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        padding: var(--ha-space-2) var(--yasno-content-padding);
+        padding: var(--ha-space-2) 0;
         gap: var(--ha-space-2);
-        border-bottom: 1px solid var(--yasno-border-color);
+        margin-top: calc(-1 * var(--yasno-content-padding));
       }
 
       .week-tab {
@@ -907,7 +981,7 @@ export class YasnoOutagesCard extends LitElement {
       }
 
       .week-tab.selected {
-        background: var(--primary-color);
+        background: var(--secondary-text-color);
         color: var(--text-primary-color);
         font-weight: var(--ha-font-weight-medium);
       }

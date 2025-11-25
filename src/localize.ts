@@ -23,6 +23,7 @@ export interface Translations {
   default_title: string;
   schedule_applies: string;
   waiting_for_schedule: string;
+  emergency_outages: string;
 }
 
 const translations: Record<string, Translations> = {
